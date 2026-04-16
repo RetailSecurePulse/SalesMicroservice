@@ -153,9 +153,10 @@ public class SalesTransactionServiceTest {
     // Arrange
     when(salesTransactionRepository.findById(testTransactionId)).thenReturn(Optional.of(dummySalesTransaction));
     when(salesTransactionRepository.saveAndFlush(any(SalesTransaction.class))).thenAnswer(invocation -> invocation.getArgument(0)); // Return the saved object
+    Instant paymentEventDate = Instant.now();
 
     // Act
-    assertDoesNotThrow(() -> salesTransactionService.updateTransactionStatus(testTransactionId, newStatus, Instant.now()));
+    assertDoesNotThrow(() -> salesTransactionService.updateTransactionStatus(testTransactionId, newStatus, paymentEventDate));
 
     // Assert
     assertEquals(newStatus, dummySalesTransaction.getStatus(), "Transaction status should be updated.");
@@ -167,10 +168,11 @@ public class SalesTransactionServiceTest {
   void updateTransactionStatus_TransactionNotFound_ThrowsBusinessException() {
     // Arrange
     Long nonExistentId = 999L;
+    Instant paymentEventDate = Instant.now();
     when(salesTransactionRepository.findById(nonExistentId)).thenReturn(Optional.empty());
 
     // Act & Assert
-    BusinessException exception = assertThrows(BusinessException.class, () -> salesTransactionService.updateTransactionStatus(nonExistentId, newStatus, Instant.now()));
+    BusinessException exception = assertThrows(BusinessException.class, () -> salesTransactionService.updateTransactionStatus(nonExistentId, newStatus, paymentEventDate));
 
     assertEquals("NOT_FOUND", exception.getErrorCode(), "Error code should be NOT_FOUND.");    
     assertTrue(exception.getMessage().contains("Sales transaction not found for id: " + nonExistentId), "Message should contain transaction ID.");

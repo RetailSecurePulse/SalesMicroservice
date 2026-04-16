@@ -77,7 +77,7 @@ public class SalesTransactionControllerTest {
     }
 
     @Test
-    public void testCreateSalesTransaction() throws Exception {
+    void testCreateSalesTransaction() throws Exception {
         SalesTransactionResponseDto transactionResponseDto = new SalesTransactionResponseDto(
                 1L,
                 1L,

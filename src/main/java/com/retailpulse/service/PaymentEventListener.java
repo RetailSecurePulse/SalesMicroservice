@@ -3,15 +3,13 @@ package com.retailpulse.service;
 
 import com.retailpulse.dto.PaymentEventDto;
 import com.retailpulse.entity.TransactionStatus;
-
-import java.time.Instant;
-import java.time.ZoneId;
-
-import java.util.logging.Logger;
-
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.logging.Logger;
 
 /**
  * Kafka listener for processing payment-related events.

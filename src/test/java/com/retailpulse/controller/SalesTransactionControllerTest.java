@@ -3,8 +3,11 @@ package com.retailpulse.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.retailpulse.dto.request.SalesDetailsDto;
 import com.retailpulse.dto.request.SalesTransactionRequestDto;
+import com.retailpulse.dto.response.CreateTransactionResponseDto;
+import com.retailpulse.dto.response.PaymentResponseDto;
 import com.retailpulse.dto.response.SalesTransactionResponseDto;
 import com.retailpulse.dto.response.TaxResultDto;
+import com.retailpulse.entity.PaymentStatus;
 import com.retailpulse.entity.TaxType;
 import com.retailpulse.service.SalesTransactionService;
 import com.retailpulse.util.DateUtil;
@@ -25,6 +28,7 @@ import java.util.List;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,7 +42,7 @@ public class SalesTransactionControllerTest {
     @InjectMocks
     private SalesTransactionController salesTransactionController;
 
-    private ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     SalesTransactionRequestDto salesTransactionRequestDto;
 
@@ -72,29 +76,45 @@ public class SalesTransactionControllerTest {
                 .andExpect(status().isOk());
     }
 
-    // @Test
-    // public void testCreateSalesTransaction() throws Exception {
-    //     // Given
-    //     CreateTransactionResponseDto responseDto = new CreateTransactionResponseDto(
-    //             1L,
-    //             1L,
-    //             "1200.00",
-    //             TaxType.GST.name(),
-    //             "0.09",
-    //             "108.00",
-    //             "1308.00",
-    //             salesTransactionRequestDto.salesDetails(),
-    //             DateUtil.convertInstantToString(Instant.now(), DateUtil.DATE_TIME_FORMAT)
-    //     );
-    //     when(salesTransactionService.createSalesTransaction(ArgumentMatchers.any()))
-    //             .thenReturn(responseDto);
+    @Test
+    public void testCreateSalesTransaction() throws Exception {
+        SalesTransactionResponseDto transactionResponseDto = new SalesTransactionResponseDto(
+                1L,
+                1L,
+                "1200.00",
+                TaxType.GST.name(),
+                "0.09",
+                "108.00",
+                "1308.00",
+                salesTransactionRequestDto.salesDetails(),
+                DateUtil.convertInstantToString(Instant.now(), DateUtil.DATE_TIME_FORMAT)
+        );
+        PaymentResponseDto paymentResponseDto = new PaymentResponseDto(
+                "client_secret_123",
+                "pi_123",
+                10L,
+                1L,
+                1308.00,
+                "SGD",
+                PaymentStatus.PROCESSING,
+                null
+        );
+        CreateTransactionResponseDto responseDto = new CreateTransactionResponseDto(
+                transactionResponseDto,
+                paymentResponseDto
+        );
+        when(salesTransactionService.createSalesTransaction(ArgumentMatchers.any()))
+                .thenReturn(responseDto);
 
-    //     // When & Then
-    //     mockMvc.perform(post("/api/sales/createTransaction")
-    //                     .contentType(MediaType.APPLICATION_JSON)
-    //                     .content(objectMapper.writeValueAsString(salesTransactionRequestDto)))
-    //             .andExpect(status().isOk());
-    // }
+        mockMvc.perform(post("/api/sales/createTransaction")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(salesTransactionRequestDto)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transaction.businessEntityId").value(1))
+                .andExpect(jsonPath("$.transaction.totalAmount").value("1308.00"))
+                .andExpect(jsonPath("$.paymentIntent.paymentIntentId").value("pi_123"))
+                .andExpect(jsonPath("$.paymentIntent.paymentStatus").value(PaymentStatus.PROCESSING.name()));
+    }
 
     @Test
     public void testUpdateSalesTransaction() throws Exception {

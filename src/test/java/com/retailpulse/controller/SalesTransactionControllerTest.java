@@ -3,12 +3,16 @@ package com.retailpulse.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.retailpulse.dto.request.SalesDetailsDto;
 import com.retailpulse.dto.request.SalesTransactionRequestDto;
+import com.retailpulse.dto.request.SuspendedTransactionDto;
 import com.retailpulse.dto.response.CreateTransactionResponseDto;
 import com.retailpulse.dto.response.PaymentResponseDto;
 import com.retailpulse.dto.response.SalesTransactionResponseDto;
 import com.retailpulse.dto.response.TaxResultDto;
+import com.retailpulse.dto.response.TransactionStatusResponseDto;
+import com.retailpulse.dto.response.TransientSalesTransactionDto;
 import com.retailpulse.entity.PaymentStatus;
 import com.retailpulse.entity.TaxType;
+import com.retailpulse.entity.TransactionStatus;
 import com.retailpulse.service.SalesTransactionService;
 import com.retailpulse.util.DateUtil;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,7 +29,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.time.Instant;
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -136,8 +143,65 @@ public class SalesTransactionControllerTest {
         // When & Then
         mockMvc.perform(put("/api/sales/updateSalesTransaction/5")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(salesTransactionRequestDto.salesDetails())))
+                .content(objectMapper.writeValueAsString(salesTransactionRequestDto.salesDetails())))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void testGetTransactionStatus() throws Exception {
+        TransactionStatusResponseDto responseDto = new TransactionStatusResponseDto(5L, TransactionStatus.COMPLETED);
+        when(salesTransactionService.getTransactionStatus(5L)).thenReturn(responseDto);
+
+        mockMvc.perform(get("/api/sales/transactionStatus/5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transactionId").value(5))
+                .andExpect(jsonPath("$.status").value(TransactionStatus.COMPLETED.name()));
+    }
+
+    @Test
+    void testSuspendTransaction() throws Exception {
+        SuspendedTransactionDto suspendedTransactionDto = new SuspendedTransactionDto(1L, salesTransactionRequestDto.salesDetails());
+        TransientSalesTransactionDto responseDto = new TransientSalesTransactionDto(
+                12L,
+                1L,
+                "1200.00",
+                TaxType.GST.name(),
+                "0.09",
+                "108.00",
+                "1308.00",
+                salesTransactionRequestDto.salesDetails(),
+                DateUtil.convertInstantToString(Instant.now(), DateUtil.DATE_TIME_FORMAT)
+        );
+        when(salesTransactionService.suspendTransaction(eq(suspendedTransactionDto)))
+                .thenReturn(List.of(responseDto));
+
+        mockMvc.perform(post("/api/sales/suspend")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(suspendedTransactionDto)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].transactionId").value(12))
+                .andExpect(jsonPath("$[0].taxType").value(TaxType.GST.name()));
+    }
+
+    @Test
+    void testRestoreTransaction() throws Exception {
+        TransientSalesTransactionDto responseDto = new TransientSalesTransactionDto(
+                12L,
+                1L,
+                "1200.00",
+                TaxType.GST.name(),
+                "0.09",
+                "108.00",
+                "1308.00",
+                salesTransactionRequestDto.salesDetails(),
+                DateUtil.convertInstantToString(Instant.now(), DateUtil.DATE_TIME_FORMAT)
+        );
+        when(salesTransactionService.restoreTransaction(1L, 12L)).thenReturn(List.of(responseDto));
+
+        mockMvc.perform(delete("/api/sales/1/suspended-transactions/12"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].businessEntityId").value(1))
+                .andExpect(jsonPath("$[0].transactionId").value(12));
     }
 
 }

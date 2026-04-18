@@ -1,15 +1,11 @@
 package com.retailpulse.service;
 
 import com.retailpulse.client.PaymentServiceClient;
+import com.retailpulse.dto.request.PaymentRequestDto;
 import com.retailpulse.dto.request.SalesDetailsDto;
 import com.retailpulse.dto.request.SalesTransactionRequestDto;
 import com.retailpulse.dto.request.SuspendedTransactionDto;
-import com.retailpulse.dto.request.PaymentRequestDto;
-import com.retailpulse.dto.response.CreateTransactionResponseDto;
-import com.retailpulse.dto.response.PaymentResponseDto;
-import com.retailpulse.dto.response.SalesTransactionResponseDto;
-import com.retailpulse.dto.response.TaxResultDto;
-import com.retailpulse.dto.response.TransientSalesTransactionDto;
+import com.retailpulse.dto.response.*;
 import com.retailpulse.entity.*;
 import com.retailpulse.exception.BusinessException;
 import com.retailpulse.repository.SalesTaxRepository;
@@ -24,7 +20,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -79,7 +74,7 @@ public class SalesTransactionServiceTest {
       .collect(Collectors.toMap(
         SalesDetailsDto::productId,
         dto -> new SalesDetails(dto.productId(), dto.quantity(), new BigDecimal(dto.salesPricePerUnit())),
-        (existing, replacement) -> replacement
+        (_, replacement) -> replacement
       ));
 
     dummySalesTransaction = new SalesTransaction(1L, dummySalesTax);
@@ -158,9 +153,10 @@ public class SalesTransactionServiceTest {
     // Arrange
     when(salesTransactionRepository.findById(testTransactionId)).thenReturn(Optional.of(dummySalesTransaction));
     when(salesTransactionRepository.saveAndFlush(any(SalesTransaction.class))).thenAnswer(invocation -> invocation.getArgument(0)); // Return the saved object
+    Instant paymentEventDate = Instant.now();
 
     // Act
-    assertDoesNotThrow(() -> salesTransactionService.updateTransactionStatus(testTransactionId, newStatus, Instant.now()));
+    assertDoesNotThrow(() -> salesTransactionService.updateTransactionStatus(testTransactionId, newStatus, paymentEventDate));
 
     // Assert
     assertEquals(newStatus, dummySalesTransaction.getStatus(), "Transaction status should be updated.");
@@ -172,12 +168,11 @@ public class SalesTransactionServiceTest {
   void updateTransactionStatus_TransactionNotFound_ThrowsBusinessException() {
     // Arrange
     Long nonExistentId = 999L;
+    Instant paymentEventDate = Instant.now();
     when(salesTransactionRepository.findById(nonExistentId)).thenReturn(Optional.empty());
 
     // Act & Assert
-    BusinessException exception = assertThrows(BusinessException.class, () -> {
-        salesTransactionService.updateTransactionStatus(nonExistentId, newStatus, Instant.now());
-    });
+    BusinessException exception = assertThrows(BusinessException.class, () -> salesTransactionService.updateTransactionStatus(nonExistentId, newStatus, paymentEventDate));
 
     assertEquals("NOT_FOUND", exception.getErrorCode(), "Error code should be NOT_FOUND.");    
     assertTrue(exception.getMessage().contains("Sales transaction not found for id: " + nonExistentId), "Message should contain transaction ID.");
@@ -224,25 +219,29 @@ public class SalesTransactionServiceTest {
     List<TransientSalesTransactionDto> result = salesTransactionService.suspendTransaction(suspendedDto);
 
     assertEquals(1, result.size());
-    assertEquals("GST", result.get(0).taxType());
-    assertEquals("1308.00", result.get(0).totalAmount());
+    assertEquals("GST", result.getFirst().taxType());
+    assertEquals("1308.00", result.getFirst().totalAmount());
 
     verify(salesTransactionHistory, times(1)).addTransaction(eq(1L), any());
   }
 
   @Test
   public void testRestoreTransaction_success() {
-    SalesTransactionMemento memento = dummySalesTransaction.saveToMemento();
-    Map<Long, SalesTransactionMemento> historyMap = Map.of(1L, memento);
-    when(salesTransactionHistory.deleteTransaction(1L, 1L)).thenReturn(historyMap);
+    SalesTransactionMemento remainingMemento = dummySalesTransaction.saveToMemento();
+    SalesTransaction transactionToRestore = new SalesTransaction(1L, dummySalesTax);
+    transactionToRestore.addSalesDetails(Map.of(4L, new SalesDetails(4L, 1, new BigDecimal("25.00"))));
+    SalesTransactionMemento restoredMemento = transactionToRestore.saveToMemento();
+    Map<Long, SalesTransactionMemento> remainingHistoryMap = Map.of(remainingMemento.transactionId(), remainingMemento);
+    when(salesTransactionHistory.deleteTransaction(1L, restoredMemento.transactionId())).thenReturn(remainingHistoryMap);
 
-    List<TransientSalesTransactionDto> result = salesTransactionService.restoreTransaction(1L, 1L);
+    List<TransientSalesTransactionDto> result = salesTransactionService.restoreTransaction(1L, restoredMemento.transactionId());
 
     assertEquals(1, result.size());
-    assertEquals("GST", result.get(0).taxType());
-    assertEquals("1308.00", result.get(0).totalAmount());
+    assertEquals("GST", result.getFirst().taxType());
+    assertEquals("1308.00", result.getFirst().totalAmount());
+    assertEquals(remainingMemento.transactionId(), result.getFirst().transactionId());
 
-    verify(salesTransactionHistory, times(1)).deleteTransaction(1L, 1L);
+    verify(salesTransactionHistory, times(1)).deleteTransaction(1L, restoredMemento.transactionId());
   }
 
   private <T, V> void setPrivateField(T targetObject, String fieldName, V value) {

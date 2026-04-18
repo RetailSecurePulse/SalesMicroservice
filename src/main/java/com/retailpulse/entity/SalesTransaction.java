@@ -4,7 +4,6 @@ import com.retailpulse.dto.request.SalesDetailsDto;
 import com.retailpulse.util.DateUtil;
 import jakarta.persistence.*;
 import lombok.Getter;
-
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.math.BigDecimal;
@@ -12,11 +11,16 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 @Getter
 @Entity
 public class SalesTransaction {
+
+    // Suspended transactions are never persisted, so they need a synthetic ID
+    // that stays unique even when multiple suspends happen in the same millisecond.
+    private static final AtomicLong MEMENTO_TRANSACTION_ID_SEQUENCE = new AtomicLong(System.currentTimeMillis());
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -92,7 +96,7 @@ public class SalesTransaction {
 
     public SalesTransactionMemento saveToMemento() {
         return new SalesTransactionMemento(
-                System.currentTimeMillis(),
+                MEMENTO_TRANSACTION_ID_SEQUENCE.incrementAndGet(),
                 this.businessEntityId,
                 this.subtotal.toPlainString(),
                 this.salesTax.getTaxType().name(),

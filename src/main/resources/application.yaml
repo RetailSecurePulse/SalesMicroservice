@@ -10,7 +10,7 @@ spring:
   datasource:
     url: jdbc:mysql://localhost:30309/RPSalesDB  #jdbc:mysql://mysql-rp-sales:3306/RPSalesDB 
     username: root
-    password: password
+    password: your_database_password
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:

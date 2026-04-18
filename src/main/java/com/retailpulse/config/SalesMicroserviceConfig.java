@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
@@ -31,7 +32,7 @@ public class SalesMicroserviceConfig {
     private String originURL;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) {
         if (authEnabled) {
             System.out.println("Auth enabled");
             http.oauth2ResourceServer(c -> c
@@ -51,12 +52,10 @@ public class SalesMicroserviceConfig {
             http.authorizeHttpRequests(c -> c
               .anyRequest().permitAll()
             );
-            http.csrf(csrf -> csrf.disable());
+            http.csrf(AbstractHttpConfigurer::disable);
         }
 
-        http.cors(c -> {
-            c.configurationSource(corsConfigurationSource());
-        });
+        http.cors(c -> c.configurationSource(corsConfigurationSource()));
 
         return http.build();
     }

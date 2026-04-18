@@ -1,5 +1,6 @@
 package com.retailpulse.service;
 
+import com.retailpulse.client.PaymentServiceClient;
 import com.retailpulse.dto.request.SalesDetailsDto;
 import com.retailpulse.dto.request.SuspendedTransactionDto;
 import com.retailpulse.dto.response.TransientSalesTransactionDto;
@@ -14,10 +15,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
-
-import com.retailpulse.client.PaymentServiceClient;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -60,10 +61,30 @@ public class SalesTransactionMementoTest {
         List<TransientSalesTransactionDto> suspendedTransactions = salesTransactionService.suspendTransaction(suspendedTransactionDto3);
 
         assertEquals(3, suspendedTransactions.size());
+        assertEquals(
+                Set.of(1, 2, 3),
+                suspendedTransactions.stream().map(transaction -> transaction.salesDetails().size()).collect(java.util.stream.Collectors.toSet())
+        );
+        assertEquals(
+                3,
+                suspendedTransactions.stream().map(TransientSalesTransactionDto::transactionId).distinct().count()
+        );
 
-        suspendedTransactions = salesTransactionService.restoreTransaction(1L, suspendedTransactions.getFirst().transactionId());
+        Long transactionIdToRestore = suspendedTransactions.stream()
+                .filter(transaction -> transaction.salesDetails().size() == 1)
+                .map(TransientSalesTransactionDto::transactionId)
+                .findFirst()
+                .orElse(null);
+
+        assertNotNull(transactionIdToRestore);
+
+        suspendedTransactions = salesTransactionService.restoreTransaction(1L, transactionIdToRestore);
 
         assertEquals(2, suspendedTransactions.size());
+        assertEquals(
+                Set.of(2, 3),
+                suspendedTransactions.stream().map(transaction -> transaction.salesDetails().size()).collect(java.util.stream.Collectors.toSet())
+        );
        
     }
 }

@@ -102,6 +102,16 @@ public class SalesTransactionServiceTest {
   }
 
   @Test
+  void testCalculateSalesTax_usesExistingTaxConfiguration() {
+    when(salesTaxRepository.findSalesTaxByTaxType(TaxType.GST)).thenReturn(Optional.of(dummySalesTax));
+
+    TaxResultDto result = salesTransactionService.calculateSalesTax(salesDetailsDtos);
+
+    assertEquals("GST", result.taxType());
+    verify(salesTaxRepository, never()).save(any(SalesTax.class));
+  }
+
+  @Test
   public void testCreateSalesTransaction_success() {
     when(salesTaxRepository.findSalesTaxByTaxType(TaxType.GST)).thenReturn(Optional.of(dummySalesTax));
     when(salesTransactionRepository.save(any(SalesTransaction.class)))
@@ -146,6 +156,127 @@ public class SalesTransactionServiceTest {
     verify(stockUpdateService, times(1)).updateStocks(eq(1L), any());
     verify(salesTransactionRepository, times(2)).save(any(SalesTransaction.class));
     verify(paymentServiceClient, times(1)).createPaymentIntent(any(PaymentRequestDto.class));
+  }
+
+  @Test
+  void testCreateSalesTransaction_emptySalesDetails_throwsException() {
+    SalesTransactionRequestDto emptyRequest = new SalesTransactionRequestDto(1L, "0.00", "0.00", List.of());
+
+    BusinessException exception = assertThrows(BusinessException.class,
+      () -> salesTransactionService.createSalesTransaction(emptyRequest));
+
+    assertEquals("EMPTY_SALE", exception.getErrorCode());
+    verifyNoInteractions(stockUpdateService, paymentServiceClient);
+  }
+
+  @Test
+  void testCreateSalesTransaction_inventoryUpdateFailure_wrapsBusinessException() {
+    when(salesTaxRepository.findSalesTaxByTaxType(TaxType.GST)).thenReturn(Optional.of(dummySalesTax));
+    doThrow(new BusinessException("INVENTORY_DOWN", "inventory unavailable"))
+      .when(stockUpdateService).updateStocks(eq(1L), any());
+
+    BusinessException exception = assertThrows(BusinessException.class,
+      () -> salesTransactionService.createSalesTransaction(salesTransactionRequestDto));
+
+    assertEquals("INVENTORY_UPDATE_FAILED", exception.getErrorCode());
+    assertTrue(exception.getMessage().contains("inventory unavailable"));
+    verify(paymentServiceClient, never()).createPaymentIntent(any());
+  }
+
+  @Test
+  void testCreateSalesTransaction_paymentServiceFailure_wrapsException() {
+    when(salesTaxRepository.findSalesTaxByTaxType(TaxType.GST)).thenReturn(Optional.of(dummySalesTax));
+    when(salesTransactionRepository.save(any(SalesTransaction.class)))
+      .thenAnswer(invocation -> {
+        SalesTransaction transaction = invocation.getArgument(0);
+        if (transaction.getId() == null) {
+          setPrivateField(transaction, "id", testTransactionId);
+        }
+        return transaction;
+      });
+    doNothing().when(stockUpdateService).updateStocks(eq(1L), any());
+    when(paymentServiceClient.createPaymentIntent(any(PaymentRequestDto.class)))
+      .thenThrow(new RuntimeException("payment timeout"));
+
+    BusinessException exception = assertThrows(BusinessException.class,
+      () -> salesTransactionService.createSalesTransaction(salesTransactionRequestDto));
+
+    assertEquals("PAYMENT_SERVICE_ERROR", exception.getErrorCode());
+    assertTrue(exception.getMessage().contains("payment timeout"));
+  }
+
+  @Test
+  void testCreateSalesTransaction_nullPaymentEventDate_defaultsToCurrentTime() {
+    when(salesTaxRepository.findSalesTaxByTaxType(TaxType.GST)).thenReturn(Optional.of(dummySalesTax));
+    when(salesTransactionRepository.save(any(SalesTransaction.class)))
+      .thenAnswer(invocation -> {
+        SalesTransaction transaction = invocation.getArgument(0);
+        if (transaction.getId() == null) {
+          setPrivateField(transaction, "id", testTransactionId);
+        }
+        if (transaction.getTransactionDate() == null) {
+          setPrivateField(transaction, "transactionDate", Instant.now());
+        }
+        return transaction;
+      });
+    PaymentResponseDto paymentResponse = new PaymentResponseDto(
+      "client_secret",
+      "pi_456",
+      55L,
+      testTransactionId,
+      1308.00,
+      "SGD",
+      PaymentStatus.PROCESSING,
+      null
+    );
+    when(paymentServiceClient.createPaymentIntent(any(PaymentRequestDto.class))).thenReturn(paymentResponse);
+
+    CreateTransactionResponseDto response = salesTransactionService.createSalesTransaction(salesTransactionRequestDto);
+
+    assertEquals("pi_456", response.paymentIntent().paymentIntentId());
+    assertNotNull(response.transaction().transactionDateTime());
+  }
+
+  @Test
+  void testCreateSalesTransaction_nullPaymentId_throwsException() {
+    when(salesTaxRepository.findSalesTaxByTaxType(TaxType.GST)).thenReturn(Optional.of(dummySalesTax));
+    when(salesTransactionRepository.save(any(SalesTransaction.class)))
+      .thenAnswer(invocation -> {
+        SalesTransaction transaction = invocation.getArgument(0);
+        if (transaction.getId() == null) {
+          setPrivateField(transaction, "id", testTransactionId);
+        }
+        return transaction;
+      });
+    when(paymentServiceClient.createPaymentIntent(any(PaymentRequestDto.class))).thenReturn(
+      new PaymentResponseDto("client_secret", "pi_789", null, testTransactionId, 1308.00, "SGD", PaymentStatus.PROCESSING, null)
+    );
+
+    BusinessException exception = assertThrows(BusinessException.class,
+      () -> salesTransactionService.createSalesTransaction(salesTransactionRequestDto));
+
+    assertEquals("PAYMENT_SERVICE_ERROR", exception.getErrorCode());
+    assertTrue(exception.getMessage().contains("Invalid response"));
+  }
+
+  @Test
+  void getTransactionStatus_success() {
+    when(salesTransactionRepository.findById(testTransactionId)).thenReturn(Optional.of(dummySalesTransaction));
+
+    TransactionStatusResponseDto response = salesTransactionService.getTransactionStatus(testTransactionId);
+
+    assertEquals(testTransactionId, response.transactionId());
+    assertEquals(initialStatus, response.status());
+  }
+
+  @Test
+  void getTransactionStatus_notFound_throwsBusinessException() {
+    when(salesTransactionRepository.findById(testTransactionId)).thenReturn(Optional.empty());
+
+    BusinessException exception = assertThrows(BusinessException.class,
+      () -> salesTransactionService.getTransactionStatus(testTransactionId));
+
+    assertEquals("NOT_FOUND", exception.getErrorCode());
   }
 
   @Test
@@ -208,6 +339,30 @@ public class SalesTransactionServiceTest {
   }
 
   @Test
+  void testUpdateSalesTransaction_notFound_throwsException() {
+    when(salesTransactionRepository.findById(999L)).thenReturn(Optional.empty());
+
+    BusinessException exception = assertThrows(BusinessException.class,
+      () -> salesTransactionService.updateSalesTransaction(999L, salesDetailsDtos));
+
+    assertEquals("NOT_FOUND", exception.getErrorCode());
+    verify(stockUpdateService, never()).updateStocks(any(), any());
+  }
+
+  @Test
+  void testUpdateSalesTransaction_inventoryFailure_wrapsException() {
+    when(salesTransactionRepository.findById(any())).thenReturn(Optional.of(dummySalesTransaction));
+    doThrow(new BusinessException("INVENTORY_DOWN", "inventory unavailable"))
+      .when(stockUpdateService).updateStocks(eq(1L), any());
+
+    BusinessException exception = assertThrows(BusinessException.class,
+      () -> salesTransactionService.updateSalesTransaction(1L, salesDetailsDtos));
+
+    assertEquals("INVENTORY_UPDATE_FAILED", exception.getErrorCode());
+    assertTrue(exception.getMessage().contains("inventory unavailable"));
+  }
+
+  @Test
   public void testSuspendTransaction_success() {
     when(salesTaxRepository.findSalesTaxByTaxType(TaxType.GST)).thenReturn(Optional.of(dummySalesTax));
 
@@ -223,6 +378,16 @@ public class SalesTransactionServiceTest {
     assertEquals("1308.00", result.getFirst().totalAmount());
 
     verify(salesTransactionHistory, times(1)).addTransaction(eq(1L), any());
+  }
+
+  @Test
+  void testSuspendTransaction_emptySalesDetails_throwsException() {
+    SuspendedTransactionDto suspendedDto = new SuspendedTransactionDto(1L, List.of());
+
+    BusinessException exception = assertThrows(BusinessException.class,
+      () -> salesTransactionService.suspendTransaction(suspendedDto));
+
+    assertEquals("EMPTY_SALE", exception.getErrorCode());
   }
 
   @Test

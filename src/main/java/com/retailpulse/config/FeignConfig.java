@@ -21,7 +21,7 @@ public class FeignConfig {
 
     private final Tracer tracer;
 
-    public FeignConfig(@Nullable Tracer tracer) {
+    public FeignConfig(Tracer tracer) {
         this.tracer = tracer;
     }
 

@@ -62,7 +62,7 @@ public class SalesMicroserviceConfig {
 
     private CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(originURL));
+        configuration.setAllowedOriginPatterns(allowedOriginPatterns());
         configuration.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         configuration.setExposedHeaders(List.of("Authorization"));
@@ -71,6 +71,13 @@ public class SalesMicroserviceConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    private List<String> allowedOriginPatterns() {
+        if (originURL != null && originURL.contains("localhost")) {
+            return List.of(originURL, "http://localhost", "http://localhost:*", "https://localhost", "https://localhost:*");
+        }
+        return List.of(originURL);
     }
 
     private JwtAuthenticationConverter jwtAuthenticationConverter() {

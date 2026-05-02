@@ -9,6 +9,7 @@ import io.micrometer.tracing.Tracer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -41,7 +42,7 @@ class FeignConfigTest {
 
     @Test
     void feignLoggerLevel_returnsFull() {
-        FeignConfig feignConfig = new FeignConfig(Mockito.mock(Tracer.class));
+        FeignConfig feignConfig = new FeignConfig(tracerProvider(Mockito.mock(Tracer.class)));
 
         assertEquals(Logger.Level.FULL, feignConfig.feignLoggerLevel());
     }
@@ -62,7 +63,7 @@ class FeignConfigTest {
                 .build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
 
-        RequestInterceptor interceptor = new FeignConfig(tracer).oauth2BearerForwardingInterceptor();
+        RequestInterceptor interceptor = new FeignConfig(tracerProvider(tracer)).oauth2BearerForwardingInterceptor();
         RequestTemplate template = new RequestTemplate();
         template.method("GET");
         template.uri("/inventory");
@@ -90,7 +91,7 @@ class FeignConfigTest {
         );
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        RequestInterceptor interceptor = new FeignConfig(tracer).oauth2BearerForwardingInterceptor();
+        RequestInterceptor interceptor = new FeignConfig(tracerProvider(tracer)).oauth2BearerForwardingInterceptor();
         RequestTemplate template = new RequestTemplate();
         template.method("POST");
         template.uri("/payment");
@@ -108,7 +109,7 @@ class FeignConfigTest {
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer forwarded-token");
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
 
-        RequestInterceptor interceptor = new FeignConfig(tracer).oauth2BearerForwardingInterceptor();
+        RequestInterceptor interceptor = new FeignConfig(tracerProvider(tracer)).oauth2BearerForwardingInterceptor();
         RequestTemplate template = new RequestTemplate();
         template.method("PUT");
         template.uri("/sales");
@@ -121,7 +122,7 @@ class FeignConfigTest {
     @Test
     void oauth2BearerForwardingInterceptor_leavesAuthorizationUnsetWhenNoTokenExists() {
         Tracer tracer = Mockito.mock(Tracer.class);
-        RequestInterceptor interceptor = new FeignConfig(tracer).oauth2BearerForwardingInterceptor();
+        RequestInterceptor interceptor = new FeignConfig(tracerProvider(tracer)).oauth2BearerForwardingInterceptor();
         RequestTemplate template = new RequestTemplate();
         template.method("DELETE");
         template.uri("/sales/1");
@@ -134,5 +135,12 @@ class FeignConfigTest {
     private void assertHeaderValue(RequestTemplate template, String name, String expectedValue) {
         Collection<String> values = template.headers().get(name);
         assertEquals(List.of(expectedValue), values == null ? List.of() : List.copyOf(values));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ObjectProvider<Tracer> tracerProvider(Tracer tracer) {
+        ObjectProvider<Tracer> tracerProvider = Mockito.mock(ObjectProvider.class);
+        when(tracerProvider.getIfAvailable()).thenReturn(tracer);
+        return tracerProvider;
     }
 }

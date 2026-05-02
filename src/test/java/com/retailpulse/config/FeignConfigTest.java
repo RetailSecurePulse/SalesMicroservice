@@ -132,6 +132,23 @@ class FeignConfigTest {
         assertTrue(template.headers().getOrDefault(HttpHeaders.AUTHORIZATION, List.of()).isEmpty());
     }
 
+    @Test
+    void oauth2BearerForwardingInterceptor_ignoresNonBearerIncomingAuthorizationHeader() {
+        Tracer tracer = Mockito.mock(Tracer.class);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Basic credentials");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        RequestInterceptor interceptor = new FeignConfig(tracerProvider(tracer)).oauth2BearerForwardingInterceptor();
+        RequestTemplate template = new RequestTemplate();
+        template.method("GET");
+        template.uri("/sales");
+
+        interceptor.apply(template);
+
+        assertTrue(template.headers().getOrDefault(HttpHeaders.AUTHORIZATION, List.of()).isEmpty());
+    }
+
     private void assertHeaderValue(RequestTemplate template, String name, String expectedValue) {
         Collection<String> values = template.headers().get(name);
         assertEquals(List.of(expectedValue), values == null ? List.of() : List.copyOf(values));
